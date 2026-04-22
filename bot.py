@@ -1,5 +1,7 @@
 import os
 import asyncio
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 import anthropic
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -11,6 +13,7 @@ load_dotenv()
 TELEGRAM_TOKEN  = os.getenv("TELEGRAM_TOKEN")
 ANTHROPIC_KEY   = os.getenv("ANTHROPIC_API_KEY")
 ALLOWED_USER_ID = os.getenv("ALLOWED_USER_ID")
+PORT            = int(os.getenv("PORT", 8080))
 
 claude = anthropic.Anthropic(api_key=ANTHROPIC_KEY)
 
@@ -25,6 +28,22 @@ def is_allowed(user_id: int) -> bool:
     if not ALLOWED_USER_ID:
         return True
     return str(user_id) == ALLOWED_USER_ID
+
+
+# Мінімальний HTTP сервер щоб Render не вбивав процес
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK")
+
+    def log_message(self, format, *args):
+        pass  # вимкнути логи HTTP
+
+
+def run_health_server():
+    server = HTTPServer(("0.0.0.0", PORT), HealthHandler)
+    server.serve_forever()
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -109,6 +128,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def main():
+    # Запустити HTTP сервер в окремому потоці
+    thread = threading.Thread(target=run_health_server, daemon=True)
+    thread.start()
+    print(f"Health server запущено на порту {PORT}")
+
     app = Application.builder().token(TELEGRAM_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
