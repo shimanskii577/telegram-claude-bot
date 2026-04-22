@@ -1,4 +1,5 @@
 import os
+import asyncio
 import anthropic
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -9,11 +10,10 @@ load_dotenv()
 
 TELEGRAM_TOKEN  = os.getenv("TELEGRAM_TOKEN")
 ANTHROPIC_KEY   = os.getenv("ANTHROPIC_API_KEY")
-ALLOWED_USER_ID = os.getenv("ALLOWED_USER_ID")  # твій Telegram ID для захисту
+ALLOWED_USER_ID = os.getenv("ALLOWED_USER_ID")
 
 claude = anthropic.Anthropic(api_key=ANTHROPIC_KEY)
 
-# Історія розмов по кожному user_id
 conversation_history: dict[int, list] = {}
 
 SYSTEM_PROMPT = """Ти — персональний AI асистент.
@@ -67,13 +67,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not user_text:
         return
 
-    # Показати "друкує..."
     await context.bot.send_chat_action(
         chat_id=update.effective_chat.id,
         action=ChatAction.TYPING
     )
 
-    # Додати повідомлення в історію
     if user_id not in conversation_history:
         conversation_history[user_id] = []
 
@@ -82,7 +80,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "content": user_text
     })
 
-    # Обрізати історію якщо занадто довга (останні 20 повідомлень)
     if len(conversation_history[user_id]) > 20:
         conversation_history[user_id] = conversation_history[user_id][-20:]
 
@@ -96,13 +93,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         reply = response.content[0].text
 
-        # Зберегти відповідь в історії
         conversation_history[user_id].append({
             "role": "assistant",
             "content": reply
         })
 
-        # Telegram обмежує повідомлення до 4096 символів
         if len(reply) <= 4096:
             await update.message.reply_text(reply)
         else:
@@ -113,7 +108,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Помилка: {str(e)}")
 
 
-def main():
+async def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
@@ -122,8 +117,8 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     print("Бот запущено...")
-    app.run_polling()
+    await app.run_polling()
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
